@@ -17,7 +17,7 @@ from rbffd.polyterms import polyterms_jax
 @jax.jit
 def gaussian_rbf(x, c, epsilon):
     """ Gaussian Radial Basis Function """
-    return jnp.exp(-epsilon * jnp.linalg.norm(x - c, axis=-1)**2)
+    return jnp.exp(-(epsilon * jnp.sqrt(jnp.sum((x - c)**2, axis=-1)))**2)
 
 @jax.jit
 def phs_rbf(x, c, m):
