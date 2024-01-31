@@ -21,7 +21,7 @@ def laplacian(f, argnums=0):
 
     hessian = jacrev(grad(f, argnums=argnums))
 
-    return lambda x, y : jnp.trace(hessian(x, y))
+    return lambda *args : jnp.trace(jnp.squeeze(hessian(*args)))
 
 def gradient(f, argnums=0):
     """ Gradient operator """
@@ -39,7 +39,7 @@ def phs_rbf(x, c, m=3):
 
 
 @partial(jax.jit, static_argnames=['rbf'])
-def setup_rbf_matrix(X, rbf=phs_rbf):
+def rbf_matrix(X, rbf=phs_rbf):
     """ Sets up the system matrix for the RBF-FD method """
 
     X = jnp.expand_dims(X, axis=0)
@@ -49,13 +49,13 @@ def setup_rbf_matrix(X, rbf=phs_rbf):
     return A
 
 @partial(jax.jit, static_argnames=['operator', 'pdeg', 'rbf'])
-def laplacian_stencil(X, y, pdeg=1, rbf=phs_rbf):
-    """ Finds the Laplacian operator stencil using RBF-FD """
+def make_stencil(X, y, operator, pdeg=1, rbf=phs_rbf):
+    """ Finds the operator stencil using RBF-FD """
 
     N = len(X)
 
     # create the matrix defining basis over the nodes
-    A = setup_rbf_matrix(X, rbf=rbf)
+    A = rbf_matrix(X, rbf=rbf)
 
     # create a matrix for polynomial exactness
     P = polyterms_jax(X, pdeg)
@@ -70,24 +70,14 @@ def laplacian_stencil(X, y, pdeg=1, rbf=phs_rbf):
     # rhs that defines the action of the operator over the nodes
     rhs_A = jnp.zeros(N)
 
-    laplace_phi = jacrev(grad(rbf, argnums=0))
+    operator_phi = operator(rbf)
 
-    for i in range(N):
-        rhs_A = rhs_A.at[i].set(jnp.trace(laplace_phi(X[i], y+1e-4))) # 1e-9 is a hack to avoid 0/0
-
+    rhs_A = jnp.array([ operator_phi(y+1e-6, X[i]) for i in range(N) ]) # 1e-6 is a hack to avoid 0/0
 
     # rhs that defines the action of the operator over the polynomials
-    my_polyterms = lambda points : polyterms_jax(points, pdeg)
+    my_polyterms = lambda i : (lambda y : polyterms_jax(y, pdeg)[0,i])
 
-    laplace_poly = jacrev(jacrev(my_polyterms, argnums=0))
-
-    hessian = jnp.squeeze(laplace_poly(jnp.expand_dims(y,axis=0)+1e-4))
-
-    if len(hessian.shape) == 1:
-        rhs_P = hessian
-    else:
-        offset = len(hessian.shape) - 2
-        rhs_P = jnp.trace(hessian, axis1=0+offset, axis2=1+offset)
+    rhs_P = jnp.array([ operator(my_polyterms(i))(jnp.expand_dims(y,axis=0)+1e-6) for i in range(P.shape[1]) ] ) # 1e-6 is a hack to avoid 0/0
 
     #block the rhs
     rhs_C = jnp.block([rhs_A, rhs_P])
@@ -97,19 +87,13 @@ def laplacian_stencil(X, y, pdeg=1, rbf=phs_rbf):
 
     return w
 
-def vmap_laplacian_system(X, rbf_arg, rbf, tree=None, stencil_size=5):
-    # THIS DOESN'T WORK WITH THE TREE INSIDE THE JITTED FUNCTION
-    """ This solves for the laplace weights for the rbf nodes / laplacian operator"""
+def build_operator(X, operator, rbf=phs_rbf, stencil_size=9, pdeg=1):
+    """ Builds the operator for the RBF-FD method """
 
-    my_laplace_operator = partial(laplacian_stencil, rbf_arg=rbf_arg, rbf=rbf, tree=tree, stencil_size=stencil_size)
+    # build the tree
+    kdtree = KDTree(X)
 
-    L = jax.vmap(my_laplace_operator, in_axes=(None, 0), out_axes=0)(X, X)
-
-    return L
-
-
-def laplacian_operator(X, stencil_dict, pdeg=1, rbf=phs_rbf):
-    """ This solves for the laplace weights for the rbf nodes / laplacian operator"""
+    stencil_dict = {i: kdtree.query(X[i], k=stencil_size)[1] for i in range(len(X))}
 
     #relative stencil size (sten. size/num. poly. terms) 2.5 is the golden number
 
@@ -119,22 +103,7 @@ def laplacian_operator(X, stencil_dict, pdeg=1, rbf=phs_rbf):
 
     # find the stencil for each node
     for i in range(N):
-        L[i, stencil_dict[i]] = laplacian_stencil(X[stencil_dict[i]], X[i], pdeg=pdeg, rbf=rbf)
-
-    return L
-
-
-def build_operator(X, rbf=phs_rbf, stencil_size=9, pdeg=1):
-    """ Builds the operator for the RBF-FD method """
-
-    # build the tree
-    kdtree = KDTree(X)
-
-    stencil_dict = {i: kdtree.query(X[i], k=stencil_size)[1] for i in range(len(X))}
-
-
-    # find the laplacian operator
-    L = laplacian_operator(X, stencil_dict, pdeg, rbf)
+        L[i, stencil_dict[i]] = make_stencil(X[stencil_dict[i]], X[i], operator = laplacian, pdeg=pdeg, rbf=rbf)
 
     return L
 
@@ -156,7 +125,18 @@ if __name__ == "__main__":
 
     test_rbf = lambda x, c : phs_rbf(x, c, m=5.0)
 
-    L = build_operator(D, rbf=test_rbf, stencil_size=9, pdeg=1)
+    try: 
+        G = build_operator(D, operator=gradient, rbf=test_rbf, stencil_size=9, pdeg=1)
+    except:
+        print("Gradient operator failed to build")
+
+    if G is not None:
+        print("Gradient operator built successfully")
+
+    try: 
+        L = build_operator(D, operator=laplacian, rbf=test_rbf, stencil_size=9, pdeg=1)
+    except:
+        print("Laplacian operator failed to build")
 
     if L is not None:
-        print("Operator built successfully")
+        print("Laplacian operator built successfully")
