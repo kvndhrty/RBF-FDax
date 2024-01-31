@@ -34,7 +34,7 @@ def polyterms(pdeg, *args):
     return p.T
 
 #@partial(jax.jit, static_argnames=['n', 'k'])
-def jax_binom(n : int ,k : int):
+def jax_binom(n : int , k : int):
     #recursive function to compute the binomial coefficient
     if k > n:
         raise ValueError("k must be less than or equal to n")
