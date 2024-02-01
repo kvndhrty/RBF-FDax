@@ -23,9 +23,33 @@ def laplacian(f, argnums=0):
 
     return lambda *args : jnp.trace(jnp.squeeze(hessian(*args)))
 
-def gradient(f, argnums=0):
-    """ Gradient operator """
-    return grad(f, argnums=argnums)
+def dx(f, argnums=0):
+    """ Derivative with respect to x """
+
+    full_grad = grad(f, argnums=argnums)
+
+    return lambda *args : jnp.squeeze(full_grad(*args))[0]
+
+def dy(f, argnums=0):
+    """ Derivative with respect to x """
+
+    full_grad = grad(f, argnums=argnums)
+
+    return lambda *args : jnp.squeeze(full_grad(*args))[1]
+
+def dz(f, argnums=0):
+    """ Derivative with respect to x """
+
+    full_grad = grad(f, argnums=argnums)
+
+    return lambda *args : jnp.squeeze(full_grad(*args))[2]
+
+def divergence(f, argnums=0):
+    """ Derivative with respect to x """
+
+    full_grad = grad(f, argnums=argnums)
+
+    return lambda *args : jnp.sum(full_grad(*args))
 
 @jax.jit
 def gaussian_rbf(x, c, epsilon=2.0):
@@ -103,11 +127,9 @@ def build_operator(X, operator, rbf=phs_rbf, stencil_size=9, pdeg=1):
 
     # find the stencil for each node
     for i in range(N):
-        L[i, stencil_dict[i]] = make_stencil(X[stencil_dict[i]], X[i], operator = laplacian, pdeg=pdeg, rbf=rbf)
+        L[i, stencil_dict[i]] = make_stencil(X[stencil_dict[i]], X[i], operator = operator, pdeg=pdeg, rbf=rbf)
 
     return L
-
-
 
 
 
@@ -125,18 +147,33 @@ if __name__ == "__main__":
 
     test_rbf = lambda x, c : phs_rbf(x, c, m=5.0)
 
-    try: 
-        G = build_operator(D, operator=gradient, rbf=test_rbf, stencil_size=9, pdeg=1)
-    except:
-        print("Gradient operator failed to build")
 
-    if G is not None:
-        print("Gradient operator built successfully")
+    try: DX = build_operator(D, operator=dx, rbf=test_rbf, stencil_size=9, pdeg=1)
+    except: DX = None
 
-    try: 
-        L = build_operator(D, operator=laplacian, rbf=test_rbf, stencil_size=9, pdeg=1)
-    except:
-        print("Laplacian operator failed to build")
+    if DX is not None:
+        print("dx operator built successfully")
+
+    try: DY = build_operator(D, operator=dy, rbf=test_rbf, stencil_size=9, pdeg=1)
+    except: DY = None
+
+    if DY is not None:
+        print("dy operator built successfully")
+
+    try: DZ = build_operator(D, operator=dz, rbf=test_rbf, stencil_size=9, pdeg=1)
+    except: DZ = None
+
+    if DZ is not None:
+        print("dz operator built successfully")
+
+    try: divergence = build_operator(D, operator=divergence, rbf=test_rbf, stencil_size=9, pdeg=1)
+    except: DX = None
+
+    if divergence is not None:
+        print("divergence operator built successfully")
+
+    try: L = build_operator(D, operator=laplacian, rbf=test_rbf, stencil_size=9, pdeg=1)
+    except: L = None
 
     if L is not None:
         print("Laplacian operator built successfully")
