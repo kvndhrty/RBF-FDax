@@ -10,10 +10,27 @@ from scipy.spatial import KDTree
 
 from rbffd.polyterms import polyterms_jax
 
+#special functions to help with multi-dimensional arrays vs scalars
+def c_trace(A):
 
+    if A.ndim == 2:
+        return jnp.trace(A)
+    elif A.ndim == 0:
+        return A
+    else:
+        raise ValueError("Input must be a 2D or 0D array")
+    
+def c_squeeze(A):
 
+    if A.ndim == 2:
+        return A.reshape(-1,)
+    elif A.ndim == 1:
+        return A
+    elif A.ndim == 0:
+        return A.reshape(1)
+    else:
+        raise ValueError("Input must be a 2D or 1D or 0D array")
 
-# Define the radial basis function
 
 # Example operators
 def laplacian(f, argnums=0):
@@ -21,14 +38,14 @@ def laplacian(f, argnums=0):
 
     hessian = jacrev(grad(f, argnums=argnums))
 
-    return lambda *args : jnp.trace(jnp.squeeze(hessian(*args)))
+    return lambda *args : c_trace(jnp.squeeze(hessian(*args)))
 
 def dx(f, argnums=0):
     """ Derivative with respect to x """
 
     full_grad = grad(f, argnums=argnums)
 
-    return lambda *args : jnp.squeeze(full_grad(*args))[0]
+    return lambda *args : c_squeeze(full_grad(*args))[0]
 
 def dy(f, argnums=0):
     """ Derivative with respect to x """
@@ -51,6 +68,8 @@ def divergence(f, argnums=0):
 
     return lambda *args : jnp.sum(full_grad(*args))
 
+
+# Define the radial basis functions
 @jax.jit
 def gaussian_rbf(x, c, epsilon=2.0):
     """ Gaussian Radial Basis Function """
@@ -92,14 +111,14 @@ def make_stencil(X, y, operator, pdeg=1, rbf=phs_rbf):
 
 
     # rhs that defines the action of the operator over the nodes
-    rhs_A = jnp.zeros(N)
+    #rhs_A = jnp.zeros(N)
 
     operator_phi = operator(rbf)
 
     rhs_A = jnp.array([ operator_phi(y+1e-6, X[i]) for i in range(N) ]) # 1e-6 is a hack to avoid 0/0
 
     # rhs that defines the action of the operator over the polynomials
-    my_polyterms = lambda i : (lambda y : polyterms_jax(y, pdeg)[0,i])
+    my_polyterms = lambda i : (lambda y : jnp.squeeze(polyterms_jax(y, pdeg))[i])
 
     rhs_P = jnp.array([ operator(my_polyterms(i))(jnp.expand_dims(y,axis=0)+1e-6) for i in range(P.shape[1]) ] ) # 1e-6 is a hack to avoid 0/0
 
