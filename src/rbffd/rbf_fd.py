@@ -48,21 +48,21 @@ def dx(f, argnums=0):
     return lambda *args : c_squeeze(full_grad(*args))[0]
 
 def dy(f, argnums=0):
-    """ Derivative with respect to x """
+    """ Derivative with respect to y """
 
     full_grad = grad(f, argnums=argnums)
 
     return lambda *args : jnp.squeeze(full_grad(*args))[1]
 
 def dz(f, argnums=0):
-    """ Derivative with respect to x """
+    """ Derivative with respect to z """
 
     full_grad = grad(f, argnums=argnums)
 
     return lambda *args : jnp.squeeze(full_grad(*args))[2]
 
 def divergence(f, argnums=0):
-    """ Derivative with respect to x """
+    """ Divergence operator """
 
     full_grad = grad(f, argnums=argnums)
 
@@ -73,12 +73,20 @@ def divergence(f, argnums=0):
 @jax.jit
 def gaussian_rbf(x, c, epsilon=2.0):
     """ Gaussian Radial Basis Function """
-    return jnp.exp(-(epsilon * jnp.sqrt(jnp.sum((x - c)**2, axis=-1)))**2)
+    z = jnp.sum((x - c)**2, axis=-1)
+
+    r = jnp.sqrt(jnp.where(z < 1e-10, 0.0, z))
+    return jnp.exp(-(epsilon * r)**2)
 
 @jax.jit
-def phs_rbf(x, c, m=3):
+def phs_rbf(x, c, m=3.0):
     """ Polynomial Radial Basis Function """
-    return jnp.sqrt(jnp.sum((x - c)**2, axis=-1))**m
+
+    z = jnp.sum((x - c)**2, axis=-1)
+
+    r = jnp.sqrt(jnp.where(z < 1e-10, 0.0, z))
+
+    return r**m
 
 
 @partial(jax.jit, static_argnames=['rbf'])
