@@ -79,6 +79,14 @@ def gaussian_rbf(x, c, epsilon=2.0):
     return jnp.exp(-(epsilon * r)**2)
 
 @jax.jit
+def circular_gaussian_rbf(x, c, epsilon=2.0):
+    """ Gaussian Radial Basis Function """
+    z = jnp.sum((jnp.exp(2*jnp.pi*1j*x) - jnp.exp(2*jnp.pi*1j*c))**2, axis=-1)
+
+    r = jnp.real(jnp.sqrt(jnp.where(z < 1e-10, 0.0, z)))
+    return jnp.exp(-(epsilon * r)**2)
+
+@jax.jit
 def phs_rbf(x, c, m=3.0):
     """ Polynomial Radial Basis Function """
 
